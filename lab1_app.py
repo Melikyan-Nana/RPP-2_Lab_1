@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import psycopg2 as pg
 
 app = Flask(__name__)
@@ -21,6 +21,8 @@ error_body = {}
 # Задание 1:
 # Функция проверки наличия записи с заданным кодом региона
 def select_region(id):
+    existing_region = False
+
     try:
         cur.execute("select * from region where id = %s", (id,))
         existing_region = cur.fetchone()
@@ -31,6 +33,7 @@ def select_region(id):
         error_body = {'reason': 'Запись с таким регионом не найдена'}
         if not existing_region:
             return error_body, 400
+
 
 
 # Функция вставки новой записи в таблицу region
@@ -61,14 +64,13 @@ def add_region():
         result, status_code = insert_region(id, name)
 
         return result, status_code
-    except Exception:
-        if status_code != 200:
-            return result, status_code
-
+    except Exception as error:
+        return jsonify({"error": str(error)}), 500
 
 # Задание 2:
 # Функция проверки наличия записи с заданным идентификатором записи в таблице tax_param
 def select_tax_param(city_id, from_hp_car, to_hp_car, from_production_year_car, to_production_year_car, rate):
+    existing_tax_param = False
     try:
         cur.execute("""select exists(select false
                                        from tax_param
@@ -130,7 +132,8 @@ def add_tax_param():
             return result, status_code
 
         return result, status_code
-    except Exception:
+    except Exception as error:
+        print(error)
         error_body = {'reason': 'Ошибка добавления объекта налогообложения'}
         return error_body, 401
 
@@ -138,53 +141,48 @@ def add_tax_param():
 # Задание 3
 # Функция проверок и инсертов
 def select_insert_auto(city_id, horse_power, production_year, name):
-    cur.execute("select * from region where id = %s", (city_id))
+    cur.execute("select * from region where id = %s", (city_id,))
     region_exist = cur.fetchone()
 
     try:
-        if region_exist:
-            cur.execute("""select id
-                            from tax_param
-                            where from_hp_car <= %s
-                            and to_hp_car >= %s
-                            and from_production_year_car <= %s
-                            and to_production_year_car >= %s""",
-                        (horse_power, horse_power, production_year, production_year,)
-                        )
-            tax_exist = cur.fetchone()
+        if not region_exist:
+            return {"error": f"Регион c id {city_id} не существует"}, 404
 
-            if tax_exist:
-                # Если такой налог существует, берем нужные данные и считаем сумму налога
-                tax_id = int(tax_exist[0])
-                cur.execute("select rate from tax_param where id = %s", (tax_id,))
+        cur.execute("""select id
+                        from tax_param
+                        where from_hp_car <= %s
+                        and to_hp_car >= %s
+                        and from_production_year_car <= %s
+                        and to_production_year_car >= %s""",
+                    (horse_power, horse_power, production_year, production_year,)
+                    )
+        tax_exist = cur.fetchone()
 
-                rate = int(cur.fetchone()[0])
-                tax = rate * int(horse_power)
+        if not tax_exist:
+            return {'error': 'Данные для расчета налога не существуют'}, 404
 
-                # Вставляем данные в таблицу
-                cur.execute("""insert into auto(city_id, tax_id, name, horse_power, production_year, tax) 
-                                    values(%s,%s,%s,%s,%s,%s)""",
-                            (city_id, tax_id, name, horse_power, production_year, tax)
-                            )
-                conn.commit()
-                message_body = {'message': 'Сработало'}
-                return message_body, 202
-            else:
-                error_body = {'reason': 'Ошибка при работе функции'}
-                return error_body, 402
-        else:
-            error_body = {'reason': 'no_data_found'}
-            return error_body, 404
-    except Exception:
-        error_body = {'reason': 'Техническая ошибка при работе функции'}
-        return error_body, 402
+        # Если такой налог существует, берем нужные данные и считаем сумму налога
+        tax_id = int(tax_exist[0])
+        cur.execute("select rate from tax_param where id = %s", (tax_id,))
+
+        rate = int(cur.fetchone()[0])
+        tax = rate * int(horse_power)
+
+        # Вставляем данные в таблицу
+        cur.execute("""insert into auto(city_id, tax_id, name, horse_power, production_year, tax) 
+                            values(%s,%s,%s,%s,%s,%s)""",
+                    (city_id, tax_id, name, horse_power, production_year, tax)
+                    )
+        conn.commit()
+        return {'message': 'Запись добавлена в таблицу auto'}, 202
+    except Exception as error:
+        return str(error), 500
 
 
 # Эндпоинт для добавления автомобиля
 @app.route('/v1/add/auto', methods=['POST'])
 def add_auto():
-    try:
-        # вытаскиваем данные из запроса
+
         req = request.get_json()
         city_id = req['city_id']
         name = req['name']
@@ -193,10 +191,7 @@ def add_auto():
 
         result, status_code = select_insert_auto(city_id, horse_power, production_year, name)
 
-        return result, status_code
-    except Exception:
-        if status_code != 202:
-            return result, status_code
+        return jsonify(result), status_code
 
 
 # Задание 4
@@ -206,10 +201,10 @@ def select_auto(id):
         cur.execute("select * from auto where id = %s", (int(id),))
         cur.fetchone()
 
-        message_body = {'message': 'Запись найдена'}
+        message_body = {'message': 'Автомобиль с таким id региона найден'}
         return message_body, 200
     except Exception:
-        error_body = {'reason': 'no_data_found'}
+        error_body = {'reason': 'Автомобиль с таким id региона найден'}
         return error_body, 404
 
 
@@ -221,9 +216,9 @@ def auto(id):
         message_body = {"Auto": f"{auto}"}
         return message_body, 200
     except Exception:
-        error_body = {'reason': 'Ошибка!'}
+        error_body = {'reason': 'Ошибка получения информации об автомобилях'}
         return error_body, 400
 
 
 if __name__ == '__main__':
-    app.run(debug = True)
+    app.run(debug=True)
