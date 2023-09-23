@@ -1,0 +1,24 @@
+CREATE TABLE region(
+	id INTEGER PRIMARY KEY NOT NULL,
+	name VARCHAR NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tax_param(
+	id SERIAL PRIMARY KEY  NOT NULL,
+	city_id INTEGER REFERENCES region(id) NOT NULL,
+	from_hp_car INTEGER NOT NULL,
+	to_hp_car INTEGER NOT NULL,
+	from_production_year_car INTEGER NOT NULL,
+	to_production_year_car INTEGER NOT NULL,
+	rate NUMERIC NOT NULL
+);
+
+CREATE TABLE auto(
+	id SERIAL PRIMARY KEY NOT NULL,
+	city_id INTEGER REFERENCES region(id) NOT NULL,
+	tax_id INTEGER REFERENCES tax_param(id) NOT NULL,
+	name VARCHAR NOT NULL,
+	horse_power INTEGER NOT NULL,
+	production_year INTEGER NOT NULL,
+	tax NUMERIC NOT NULL
+);
